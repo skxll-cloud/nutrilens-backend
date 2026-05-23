@@ -1,9 +1,9 @@
 // src/services/ocrService.ts
 import Tesseract from 'tesseract.js';
-import axios from 'axios';
+import Groq from 'groq-sdk';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const VISION_MODEL = process.env.GROQ_VISION_MODEL || 'llava-v1.5-7b-4096-preview';
 
 export interface OCRResult {
   text: string;
@@ -31,19 +31,25 @@ Look at the image and the OCR text. Return ONLY valid JSON with this structure:
 No markdown, no explanation.`;
 
   try {
-    const { data } = await axios.post(GEMINI_URL, {
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inline_data: { mime_type: 'image/jpeg', data: base64Image } }
-        ]
-      }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 300 }
+    const response = await groq.chat.completions.create({
+      model: VISION_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}` } },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 300,
     });
 
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+    const content = response.choices[0]?.message?.content ?? '{}';
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(match?.[0] ?? '{}');
     return {
       text: rawOCRText,
       productName: parsed.productName ?? null,

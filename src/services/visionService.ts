@@ -1,10 +1,9 @@
 // src/services/visionService.ts
-import axios from 'axios';
+import Groq from 'groq-sdk';
 import { ScanResult } from '../types';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const VISION_MODEL = process.env.GROQ_VISION_MODEL || 'llava-v1.5-7b-4096-preview';
 
 const VISION_PROMPT = `You are a professional nutritionist and food recognition expert.
 Analyze the provided food image and return ONLY a valid JSON object with this exact structure:
@@ -37,40 +36,48 @@ Rules:
 - Return ONLY the JSON, no markdown, no explanation
 - If you cannot identify any food, still return valid JSON with empty items array`;
 
-async function callGemini(prompt: string, base64Image: string, mimeType = 'image/jpeg'): Promise<string> {
+async function callGroqVision(prompt: string, base64Image: string, mimeType = 'image/jpeg'): Promise<string> {
   try {
-    const { data } = await axios.post(GEMINI_URL, {
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inline_data: { mime_type: mimeType, data: base64Image } }
-        ]
-      }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1500 }
+    const response = await groq.chat.completions.create({
+      model: VISION_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 1500,
     });
-    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    return response.choices[0]?.message?.content ?? '';
   } catch (err: any) {
-    const status = err?.response?.status;
-    const geminiError = err?.response?.data?.error;
-    console.error(`[GEMINI] HTTP ${status} - model: ${GEMINI_MODEL} - key prefix: ${GEMINI_API_KEY?.slice(0, 8)}...`);
-    if (geminiError) console.error('[GEMINI] Error details:', JSON.stringify(geminiError));
-    throw new Error(`Gemini API error ${status}: ${geminiError?.message ?? err.message}`);
+    const status = err?.status ?? err?.error?.status;
+    const message = err?.error?.message ?? err?.message;
+    console.error(`[GROQ] HTTP ${status} - model: ${VISION_MODEL}`);
+    if (message) console.error('[GROQ] Error:', message);
+    throw new Error(`Groq API error ${status}: ${message}`);
   }
 }
 
 export async function analyzeImageWithVision(base64Image: string, mimeType = 'image/jpeg'): Promise<ScanResult> {
-  const content = await callGemini(VISION_PROMPT, base64Image, mimeType);
-  if (!content) throw new Error('No response from Gemini API');
+  const content = await callGroqVision(VISION_PROMPT, base64Image, mimeType);
+  if (!content) throw new Error('No response from Groq API');
   try {
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(cleaned) as ScanResult;
+    // Extract first JSON object if model adds surrounding text
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON found in response');
+    return JSON.parse(match[0]) as ScanResult;
   } catch {
-    throw new Error(`Failed to parse Gemini response: ${content}`);
+    throw new Error(`Failed to parse Groq response: ${content.slice(0, 200)}`);
   }
 }
 
 export async function detectImageType(base64Image: string, mimeType = 'image/jpeg'): Promise<'product' | 'meal'> {
   const prompt = 'Is this image showing a packaged/labeled food product (with nutrition label or barcode) or a prepared meal/dish? Reply with ONLY one word: "product" or "meal"';
-  const answer = await callGemini(prompt, base64Image, mimeType);
+  const answer = await callGroqVision(prompt, base64Image, mimeType);
   return answer.toLowerCase().trim().includes('product') ? 'product' : 'meal';
 }
