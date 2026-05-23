@@ -1,5 +1,5 @@
 # Stage 1 — build TypeScript
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 WORKDIR /app
 
 COPY package*.json ./
@@ -10,7 +10,7 @@ COPY src/ ./src/
 RUN npm run build
 
 # Stage 2 — production image
-FROM node:20-slim AS production
+FROM node:22-slim AS production
 WORKDIR /app
 
 ENV NODE_ENV=production
