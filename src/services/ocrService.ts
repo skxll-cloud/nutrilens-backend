@@ -3,7 +3,7 @@ import Tesseract from 'tesseract.js';
 import Groq from 'groq-sdk';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const VISION_MODEL = process.env.GROQ_VISION_MODEL || 'llava-v1.5-7b-4096-preview';
+const VISION_MODEL = process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 export interface OCRResult {
   text: string;
