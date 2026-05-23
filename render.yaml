@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: nutrilens-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENFOODFACTS_BASE_URL
+        value: https://world.openfoodfacts.org
+      - key: USDA_API_KEY
+        sync: false
+      - key: USDA_BASE_URL
+        value: https://api.nal.usda.gov/fdc/v1
