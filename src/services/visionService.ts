@@ -3,7 +3,8 @@ import axios from 'axios';
 import { ScanResult } from '../types';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 const VISION_PROMPT = `You are a professional nutritionist and food recognition expert.
 Analyze the provided food image and return ONLY a valid JSON object with this exact structure:
@@ -37,16 +38,24 @@ Rules:
 - If you cannot identify any food, still return valid JSON with empty items array`;
 
 async function callGemini(prompt: string, base64Image: string, mimeType = 'image/jpeg'): Promise<string> {
-  const { data } = await axios.post(GEMINI_URL, {
-    contents: [{
-      parts: [
-        { text: prompt },
-        { inline_data: { mime_type: mimeType, data: base64Image } }
-      ]
-    }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 1500 }
-  });
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  try {
+    const { data } = await axios.post(GEMINI_URL, {
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: mimeType, data: base64Image } }
+        ]
+      }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1500 }
+    });
+    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  } catch (err: any) {
+    const status = err?.response?.status;
+    const geminiError = err?.response?.data?.error;
+    console.error(`[GEMINI] HTTP ${status} - model: ${GEMINI_MODEL} - key prefix: ${GEMINI_API_KEY?.slice(0, 8)}...`);
+    if (geminiError) console.error('[GEMINI] Error details:', JSON.stringify(geminiError));
+    throw new Error(`Gemini API error ${status}: ${geminiError?.message ?? err.message}`);
+  }
 }
 
 export async function analyzeImageWithVision(base64Image: string, mimeType = 'image/jpeg'): Promise<ScanResult> {
